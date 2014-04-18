@@ -25,7 +25,7 @@
 
 // Defines
 // Plugin Info
-#define PLUGIN_INFO_VERSION			"1.0.105P.D1"
+#define PLUGIN_INFO_VERSION			"1.0.105P.D2"
 #define PLUGIN_INFO_NAME			"Donator Vote Mute"
 #define PLUGIN_INFO_AUTHOR			"<eVa>Dog/AlliedModders LLC/Malachi"
 #define PLUGIN_INFO_DESCRIPTION		"Donator-initiated vote to mute"
@@ -37,6 +37,11 @@
 #define VOTE_NAME		0
 #define VOTE_NO 		"###no###"
 #define VOTE_YES 		"###yes###"
+
+// These define the text players see in the donator menu
+#define MENUTEXT_CHOOSEPLAYER				"Vote Mute"
+#define MENUTITLE_CHOOSEPLAYER				"Choose player:"
+
 
 
 // Globals
@@ -66,8 +71,6 @@ public OnPluginStart()
 		
 	//Allowed for ALL players
 	RegConsoleCmd("sm_votemute", Command_Votemute,  "sm_votemute <player> ")  
-	
-//	LoadTranslations("common.phrases")
 }
 
 
@@ -75,6 +78,14 @@ public OnAllPluginsLoaded()
 {
 	if(!LibraryExists("donator.core")) 
 		SetFailState("Unable to find plugin: Basic Donator Interface");
+
+	Donator_RegisterMenuItem(MENUTEXT_CHOOSEPLAYER, VoteMuteCallback);
+}
+
+
+public DonatorMenu:VoteMuteCallback(iClient)
+{
+	DisplayVoteTargetMenu(iClient);
 }
 
 
@@ -172,25 +183,34 @@ DisplayVoteMuteMenu(client, target)
 DisplayVoteTargetMenu(client)
 {
 	new Handle:menu = CreateMenu(MenuHandler_Vote);
+	new count = 0;
 	
 	decl String:title[100];
 	new String:playername[128]
 	new String:identifier[64]
-	Format(title, sizeof(title), "%s", "Choose player:");
+	Format(title, sizeof(title), "%s", MENUTITLE_CHOOSEPLAYER);
 	SetMenuTitle(menu, title);
-	SetMenuExitBackButton(menu, true);
+//	SetMenuExitBackButton(menu, true);
 	
 	for (new i = 1; i < GetMaxClients(); i++)
 	{
-		if (IsClientInGame(i) && !(GetUserFlagBits(i) & ADMFLAG_CHAT))
+		if (IsClientInGame(i) && !(GetUserFlagBits(i) & ADMFLAG_CHAT) && !IsFakeClient(i))
 		{
 			GetClientName(i, playername, sizeof(playername))
 			Format(identifier, sizeof(identifier), "%i", i)
 			AddMenuItem(menu, identifier, playername)
+			count++;
 		}
 	}
 	
-	DisplayMenu(menu, client, MENU_TIME_FOREVER);
+	if (count > 0)
+	{
+		DisplayMenu(menu, client, MENU_TIME_FOREVER);
+	}
+	else
+	{
+		PrintToChat(client, "%s No muteable players.",  PLUGIN_PRINT_NAME);
+	}
 }
 
 
@@ -210,11 +230,18 @@ public MenuHandler_Vote(Handle:menu, MenuAction:action, param1, param2)
 
 		if (target == 0)
 		{
-			PrintToChat(param1, "%s %s",  PLUGIN_PRINT_NAME, "Player no longer available");
+			PrintToChat(param1, "%s %s",  PLUGIN_PRINT_NAME, "Player no longer available.");
 		}
 		else
 		{
-			DisplayVoteMuteMenu(param1, target);
+			if (IsVoteInProgress())
+			{
+				PrintToChat(param1, "%s Vote in Progress", PLUGIN_PRINT_NAME);
+			}
+			else
+			{
+				DisplayVoteMuteMenu(param1, target);
+			}
 		}
 	}
 }
