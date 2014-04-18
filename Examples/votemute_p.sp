@@ -15,22 +15,16 @@
 //
 
 
-// Includes
 #include <sourcemod>
 #include <sdktools>
 #undef REQUIRE_PLUGIN
 #include <adminmenu>
-#include <donator>
 
+#define PLUGIN_VERSION "1.0.105P" 
 
-// Defines
-// Plugin Info
-#define PLUGIN_INFO_VERSION			"1.0.105P.D1"
-#define PLUGIN_INFO_NAME			"Donator Vote Mute"
-#define PLUGIN_INFO_AUTHOR			"<eVa>Dog/AlliedModders LLC/Malachi"
-#define PLUGIN_INFO_DESCRIPTION		"Donator-initiated vote to mute"
-#define PLUGIN_INFO_URL				"http://www.theville.org"
-#define PLUGIN_PRINT_NAME			"[Donator:VoteMute]"			// Used for self-identification in chat/logging
+new Handle:g_Cvar_Limits
+new Handle:g_hVoteMenu = INVALID_HANDLE
+
 
 #define VOTE_CLIENTID	0
 #define VOTE_USERID		1
@@ -38,66 +32,70 @@
 #define VOTE_NO 		"###no###"
 #define VOTE_YES 		"###yes###"
 
-
-// Globals
-new Handle:g_Cvar_Limits
-new Handle:g_hVoteMenu = INVALID_HANDLE
 new g_voteClient[2]
 new String:g_voteInfo[3][65]
+
 new g_votetype = 0
+
 new bool:g_Gagged[65]
 
-
-// Info
-public Plugin:myinfo = 
+public Plugin:myinfo =
 {
-	name = PLUGIN_INFO_NAME,
-	author = PLUGIN_INFO_AUTHOR,
-	description = PLUGIN_INFO_DESCRIPTION,
-	version = PLUGIN_INFO_VERSION,
-	url = PLUGIN_INFO_URL
+	name = "Vote Mute/Vote Silence",
+	author = "<eVa>Dog/AlliedModders LLC",
+	description = "Vote Muting and Silencing",
+	version = PLUGIN_VERSION,
+	url = "http://www.theville.org"
 }
-
 
 public OnPluginStart()
 {
-	CreateConVar("sm_votemute_version", PLUGIN_INFO_VERSION, "Version of votemute/votesilence", FCVAR_PLUGIN|FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY)
-	g_Cvar_Limits = CreateConVar("sm_votemute_limit", "0.30", "Vote percentage required for successful mute.")
+	CreateConVar("sm_votemute_version", PLUGIN_VERSION, "Version of votemute/votesilence", FCVAR_PLUGIN|FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY)
+	g_Cvar_Limits = CreateConVar("sm_votemute_limit", "0.30", "percent required for successful mute vote or mute silence.")
 		
 	//Allowed for ALL players
 	RegConsoleCmd("sm_votemute", Command_Votemute,  "sm_votemute <player> ")  
+	RegConsoleCmd("sm_votesilence", Command_Votesilence,  "sm_votesilence <player> ")  
+	RegConsoleCmd("sm_votegag", Command_Votegag,  "sm_votegag <player> ") 
 	
-//	LoadTranslations("common.phrases")
+	RegConsoleCmd("say", Command_Say);
+	RegConsoleCmd("say_team", Command_Say);
+	RegConsoleCmd("voicemenu", Command_VoiceMenu)
+	
+	LoadTranslations("common.phrases")
 }
 
-
-public OnAllPluginsLoaded()
+public Action:Command_Say(client, args)
 {
-	if(!LibraryExists("donator.core")) 
-		SetFailState("Unable to find plugin: Basic Donator Interface");
+	if (client)
+	{
+		if (g_Gagged[client])
+		{
+			return Plugin_Handled;		
+		}
+	}
+	
+	return Plugin_Continue;
 }
 
+public Action:Command_VoiceMenu(client, args)
+{
+	if (client)
+	{
+		if (g_Gagged[client])
+		{
+			return Plugin_Handled	
+		}
+	}
+	return Plugin_Continue
+}
 
+	
 public Action:Command_Votemute(client, args)
 {
-	new String:name[MAX_NAME_LENGTH];
-	GetClientName(client, name, sizeof(name));
-	
-	// Is this client a donator?
-	if (IsPlayerDonator(client))
-	{
-		PrintToServer("%s Donator %s started a mute vote.", PLUGIN_PRINT_NAME, name);
-	}
-	else
-	{
-		ReplyToCommand(client, "%s You must be a donator to use this command.", PLUGIN_PRINT_NAME);
-		return Plugin_Handled
-	}
-	
-
 	if (IsVoteInProgress())
 	{
-		ReplyToCommand(client, "%s Vote in Progress", PLUGIN_PRINT_NAME);
+		ReplyToCommand(client, "[SM] Vote in Progress");
 		return Plugin_Handled
 	}	
 	
@@ -130,6 +128,77 @@ public Action:Command_Votemute(client, args)
 	return Plugin_Handled
 }
 
+public Action:Command_Votesilence(client, args)
+{
+	if (IsVoteInProgress())
+	{
+		ReplyToCommand(client, "[SM] Vote in Progress")
+		return Plugin_Handled;
+	}	
+	
+	if (!TestVoteDelay(client))
+	{
+		return Plugin_Handled
+	}
+	
+	if (args < 1)
+	{
+		g_votetype = 1
+		DisplayVoteTargetMenu(client)
+	}
+	else
+	{
+		new String:arg[64]
+		GetCmdArg(1, arg, 64)
+		
+		new target = FindTarget(client, arg)
+
+		if (target == -1)
+		{
+			return Plugin_Handled
+		}
+		
+		g_votetype = 1
+		DisplayVoteMuteMenu(client, target)
+	}
+	return Plugin_Handled
+}
+
+public Action:Command_Votegag(client, args)
+{
+	if (IsVoteInProgress())
+	{
+		ReplyToCommand(client, "[SM] Vote in Progress")
+		return Plugin_Handled;
+	}	
+	
+	if (!TestVoteDelay(client))
+	{
+		return Plugin_Handled
+	}
+	
+	if (args < 1)
+	{
+		g_votetype = 2
+		DisplayVoteTargetMenu(client)
+	}
+	else
+	{
+		new String:arg[64]
+		GetCmdArg(1, arg, 64)
+		
+		new target = FindTarget(client, arg)
+
+		if (target == -1)
+		{
+			return Plugin_Handled
+		}
+		
+		g_votetype = 2
+		DisplayVoteMuteMenu(client, target)
+	}
+	return Plugin_Handled
+}
 
 DisplayVoteMuteMenu(client, target)
 {
@@ -167,7 +236,6 @@ DisplayVoteMuteMenu(client, target)
 	SetMenuExitButton(g_hVoteMenu, false);
 	VoteMenuToAll(g_hVoteMenu, 20);
 }
-
 
 DisplayVoteTargetMenu(client)
 {
@@ -210,7 +278,7 @@ public MenuHandler_Vote(Handle:menu, MenuAction:action, param1, param2)
 
 		if (target == 0)
 		{
-			PrintToChat(param1, "%s %s",  PLUGIN_PRINT_NAME, "Player no longer available");
+			PrintToChat(param1, "[SM] %s", "Player no longer available");
 		}
 		else
 		{
@@ -255,7 +323,7 @@ public Handler_VoteCallback(Handle:menu, MenuAction:action, param1, param2)
 	}*/
 	else if (action == MenuAction_VoteCancel && param1 == VoteCancel_NoVotes)
 	{
-		PrintToChatAll("%s %s", PLUGIN_PRINT_NAME, "No Votes Cast");
+		PrintToChatAll("[SM] %s", "No Votes Cast");
 	}	
 	else if (action == MenuAction_VoteEnd)
 	{
@@ -277,27 +345,27 @@ public Handler_VoteCallback(Handle:menu, MenuAction:action, param1, param2)
 		if ((strcmp(item, VOTE_YES) == 0 && FloatCompare(percent,limit) < 0 && param1 == 0) || (strcmp(item, VOTE_NO) == 0 && param1 == 1))
 		{
 			LogAction(-1, -1, "Vote failed.");
-			PrintToChatAll("%s %s", PLUGIN_PRINT_NAME, "Vote Failed", RoundToNearest(100.0*limit), RoundToNearest(100.0*percent), totalVotes);
+			PrintToChatAll("[SM] %s", "Vote Failed", RoundToNearest(100.0*limit), RoundToNearest(100.0*percent), totalVotes);
 		}
 		else
 		{
-			PrintToChatAll("%s %s", PLUGIN_PRINT_NAME, "Vote Successful", RoundToNearest(100.0*percent), totalVotes);			
+			PrintToChatAll("[SM] %s", "Vote Successful", RoundToNearest(100.0*percent), totalVotes);			
 			if (g_votetype == 0)
 			{
-				PrintToChatAll("%s %s", PLUGIN_PRINT_NAME, "Muted target", "_s", g_voteInfo[VOTE_NAME]);
+				PrintToChatAll("[SM] %s", "Muted target", "_s", g_voteInfo[VOTE_NAME]);
 				LogAction(-1, g_voteClient[VOTE_CLIENTID], "Vote mute successful, muted \"%L\" ", g_voteClient[VOTE_CLIENTID]);
 				SetClientListeningFlags( g_voteClient[VOTE_CLIENTID], VOICE_MUTED);					
 			}
 			else if (g_votetype == 1)
 			{
-				PrintToChatAll("%s %s", PLUGIN_PRINT_NAME, "Silenced target", "_s", g_voteInfo[VOTE_NAME]);	
+				PrintToChatAll("[SM] %s", "Silenced target", "_s", g_voteInfo[VOTE_NAME]);	
 				LogAction(-1, g_voteClient[VOTE_CLIENTID], "Vote silence successful, silenced \"%L\" ", g_voteClient[VOTE_CLIENTID]);
 				SetClientListeningFlags( g_voteClient[VOTE_CLIENTID], VOICE_MUTED);
 				g_Gagged[g_voteClient[VOTE_CLIENTID]] = true
 			}		
 			else 
 			{
-				PrintToChatAll("%s %s", PLUGIN_PRINT_NAME, "Gagged target", "_s", g_voteInfo[VOTE_NAME]);	
+				PrintToChatAll("[SM] %s", "Gagged target", "_s", g_voteInfo[VOTE_NAME]);	
 				LogAction(-1, g_voteClient[VOTE_CLIENTID], "Vote gag successful, gagged \"%L\" ", g_voteClient[VOTE_CLIENTID]);
 				g_Gagged[g_voteClient[VOTE_CLIENTID]] = true
 			}	
@@ -325,11 +393,11 @@ bool:TestVoteDelay(client)
  	{
  		if (delay > 60)
  		{
- 			ReplyToCommand(client, "%s Vote delay: %i mins", PLUGIN_PRINT_NAME, delay % 60)
+ 			ReplyToCommand(client, "[SM] Vote delay: %i mins", delay % 60)
  		}
  		else
  		{
- 			ReplyToCommand(client, "%s Vote delay: %i secs", PLUGIN_PRINT_NAME, delay)
+ 			ReplyToCommand(client, "[SM] Vote delay: %i secs", delay)
  		}
  		
  		return false
